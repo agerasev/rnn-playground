@@ -1,0 +1,13 @@
+[package]
+name = "rnn-pg"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+burn = { version = "0.19", features = [
+    "std",
+    "train",
+    "wgpu",
+    "fusion",
+], default-features = false }

@@ -1,0 +1,150 @@
+use burn::{
+    nn::{
+        Linear, LinearConfig, Lstm, LstmConfig, LstmState,
+        gru::{Gru, GruConfig},
+    },
+    prelude::*,
+};
+
+use crate::model::{Config, decoder::Decoder};
+
+fn forward_multiple_steps<B: Backend, R: Rnn<B>>(
+    rnn: &R,
+    xs: Tensor<B, 3>,
+    h_init: R::State,
+) -> (Tensor<B, 3>, R::State) {
+    let mut ys = Vec::with_capacity(xs.dims()[1]);
+    let mut h = h_init;
+    for x in xs.split(1, 1).into_iter().map(|x| x.squeeze_dim(1)) {
+        let (y, h_next) = rnn.forward_step(x, h);
+        h = h_next;
+        ys.push(y.unsqueeze_dim(1));
+    }
+    let ys = Tensor::cat(ys, 1);
+    (ys, h)
+}
+
+pub trait Rnn<B: Backend>: Decoder<B> {
+    fn forward_step(&self, x: Tensor<B, 2>, h: Self::State) -> (Tensor<B, 2>, Self::State);
+}
+
+#[derive(Config, Debug)]
+pub struct RnnConfig {
+    pub d_hidden: usize,
+}
+
+#[derive(Module, Debug)]
+pub struct Naive<B: Backend> {
+    pub hh: Linear<B>,
+}
+
+impl Config for RnnConfig {
+    type Model<B: Backend> = Naive<B>;
+
+    fn init_model<B: Backend>(&self, device: &B::Device) -> Self::Model<B> {
+        Naive {
+            hh: LinearConfig::new(self.d_hidden, self.d_hidden).init(device),
+        }
+    }
+}
+
+impl<B: Backend> Decoder<B> for Naive<B> {
+    type State = Tensor<B, 2>;
+
+    fn init_state(&self, batch_size: usize, device: &B::Device) -> Self::State {
+        Tensor::zeros([batch_size, self.hh.weight.dims()[0]], device)
+    }
+
+    fn forward_sequence(
+        &self,
+        xs: Tensor<B, 3>,
+        state: Self::State,
+    ) -> (Tensor<B, 3>, Self::State) {
+        forward_multiple_steps(self, xs, state)
+    }
+}
+
+impl<B: Backend> Rnn<B> for Naive<B> {
+    fn forward_step(&self, x: Tensor<B, 2>, h: Self::State) -> (Tensor<B, 2>, Self::State) {
+        let h_next = self.hh.forward(x + h).tanh();
+        (h_next.clone(), h_next)
+    }
+}
+
+impl Config for LstmConfig {
+    type Model<B: Backend> = Lstm<B>;
+
+    fn init_model<B: Backend>(&self, device: &B::Device) -> Self::Model<B> {
+        self.init(device)
+    }
+}
+
+impl<B: Backend> Decoder<B> for Lstm<B> {
+    type State = LstmState<B, 2>;
+
+    fn init_state(&self, batch_size: usize, device: &B::Device) -> Self::State {
+        LstmState::new(
+            Tensor::zeros([batch_size, self.d_hidden], device),
+            Tensor::zeros([batch_size, self.d_hidden], device),
+        )
+    }
+
+    fn forward_sequence(
+        &self,
+        xs: Tensor<B, 3>,
+        h_init: Self::State,
+    ) -> (Tensor<B, 3>, Self::State) {
+        if xs.dims()[1] == 0 {
+            return (xs, h_init);
+        }
+        let (ys, h_last) = self.forward(xs, Some(h_init));
+        (ys, h_last)
+    }
+}
+
+impl<B: Backend> Rnn<B> for Lstm<B> {
+    fn forward_step(&self, x: Tensor<B, 2>, h: Self::State) -> (Tensor<B, 2>, Self::State) {
+        let (y, h_next) = self.forward(x.unsqueeze_dim(1), Some(h));
+        (y.squeeze_dim(1), h_next)
+    }
+}
+
+impl Config for GruConfig {
+    type Model<B: Backend> = Gru<B>;
+
+    fn init_model<B: Backend>(&self, device: &B::Device) -> Self::Model<B> {
+        self.init(device)
+    }
+}
+
+impl<B: Backend> Decoder<B> for Gru<B> {
+    type State = Tensor<B, 2>;
+
+    fn init_state(&self, batch_size: usize, device: &B::Device) -> Self::State {
+        Tensor::zeros([batch_size, self.d_hidden], device)
+    }
+
+    fn forward_sequence(
+        &self,
+        xs: Tensor<B, 3>,
+        h_init: Self::State,
+    ) -> (Tensor<B, 3>, Self::State) {
+        if xs.dims()[1] == 0 {
+            return (xs, h_init);
+        }
+        let h_all = self.forward(xs, Some(h_init));
+        let h_last = h_all
+            .clone()
+            .narrow(1, h_all.dims()[1] - 1, 1)
+            .squeeze_dim(1);
+        (h_all, h_last)
+    }
+}
+
+impl<B: Backend> Rnn<B> for Gru<B> {
+    fn forward_step(&self, x: Tensor<B, 2>, h: Self::State) -> (Tensor<B, 2>, Self::State) {
+        let h_all = self.forward(x.unsqueeze_dim(1), Some(h));
+        let h_next = h_all.squeeze_dim(1);
+        (h_next.clone(), h_next)
+    }
+}
