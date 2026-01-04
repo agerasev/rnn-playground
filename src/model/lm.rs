@@ -5,11 +5,11 @@ use burn::{
 
 use crate::model::{
     Config,
-    decoder::{Decoder, DecoderConfig},
+    seq::{SequenceModel, SequenceModelConfig, SequenceTensor},
 };
 
 #[derive(Debug)]
-pub struct LmConfig<M: DecoderConfig> {
+pub struct LmConfig<M: SequenceModelConfig> {
     pub vocab_size: usize,
     pub decoder: M,
 }
@@ -21,7 +21,7 @@ pub struct Lm<B: Backend, M: Module<B>> {
     pub lm_head: Linear<B>,
 }
 
-impl<M: DecoderConfig> Config for LmConfig<M> {
+impl<M: SequenceModelConfig> Config for LmConfig<M> {
     type Model<B: Backend> = Lm<B, M::Model<B>>;
 
     fn init_model<B: Backend>(&self, device: &B::Device) -> Self::Model<B> {
@@ -33,11 +33,15 @@ impl<M: DecoderConfig> Config for LmConfig<M> {
     }
 }
 
-impl<B: Backend, M: Decoder<B>> Lm<B, M> {
-    pub fn forward(&self, tokens: Tensor<B, 2, Int>, state: M::State) -> (Tensor<B, 3>, M::State) {
-        let x = self.emb.forward(tokens);
+impl<B: Backend, M: SequenceModel<B>> Lm<B, M> {
+    pub fn forward(
+        &self,
+        tokens: SequenceTensor<B, 2, Int>,
+        state: M::State,
+    ) -> (SequenceTensor<B, 3>, M::State) {
+        let x = SequenceTensor::new(self.emb.forward(tokens.data), tokens.mask);
         let (h, new_state) = self.decoder.forward_sequence(x, state);
-        let y = self.lm_head.forward(h);
+        let y = SequenceTensor::new(self.lm_head.forward(h.data), h.mask);
         (y, new_state)
     }
 }

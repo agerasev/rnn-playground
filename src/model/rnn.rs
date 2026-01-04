@@ -6,25 +6,28 @@ use burn::{
     prelude::*,
 };
 
-use crate::model::{Config, decoder::Decoder};
+use crate::model::{
+    Config,
+    seq::{SequenceModel, SequenceTensor},
+};
 
 fn forward_multiple_steps<B: Backend, R: Rnn<B>>(
     rnn: &R,
-    xs: Tensor<B, 3>,
+    xs: SequenceTensor<B, 3>,
     h_init: R::State,
-) -> (Tensor<B, 3>, R::State) {
-    let mut ys = Vec::with_capacity(xs.dims()[1]);
+) -> (SequenceTensor<B, 3>, R::State) {
+    let mut ys = Vec::with_capacity(xs.data.dims()[1]);
     let mut h = h_init;
-    for x in xs.split(1, 1).into_iter().map(|x| x.squeeze_dim(1)) {
+    for x in xs.data.split(1, 1).into_iter().map(|x| x.squeeze_dim(1)) {
         let (y, h_next) = rnn.forward_step(x, h);
         h = h_next;
         ys.push(y.unsqueeze_dim(1));
     }
-    let ys = Tensor::cat(ys, 1);
+    let ys = SequenceTensor::new(Tensor::cat(ys, 1), xs.mask);
     (ys, h)
 }
 
-pub trait Rnn<B: Backend>: Decoder<B> {
+pub trait Rnn<B: Backend>: SequenceModel<B> {
     fn forward_step(&self, x: Tensor<B, 2>, h: Self::State) -> (Tensor<B, 2>, Self::State);
 }
 
@@ -48,7 +51,7 @@ impl Config for RnnConfig {
     }
 }
 
-impl<B: Backend> Decoder<B> for Naive<B> {
+impl<B: Backend> SequenceModel<B> for Naive<B> {
     type State = Tensor<B, 2>;
 
     fn init_state(&self, batch_size: usize, device: &B::Device) -> Self::State {
@@ -57,9 +60,9 @@ impl<B: Backend> Decoder<B> for Naive<B> {
 
     fn forward_sequence(
         &self,
-        xs: Tensor<B, 3>,
+        xs: SequenceTensor<B, 3>,
         state: Self::State,
-    ) -> (Tensor<B, 3>, Self::State) {
+    ) -> (SequenceTensor<B, 3>, Self::State) {
         forward_multiple_steps(self, xs, state)
     }
 }
@@ -79,7 +82,7 @@ impl Config for LstmConfig {
     }
 }
 
-impl<B: Backend> Decoder<B> for Lstm<B> {
+impl<B: Backend> SequenceModel<B> for Lstm<B> {
     type State = LstmState<B, 2>;
 
     fn init_state(&self, batch_size: usize, device: &B::Device) -> Self::State {
@@ -91,14 +94,15 @@ impl<B: Backend> Decoder<B> for Lstm<B> {
 
     fn forward_sequence(
         &self,
-        xs: Tensor<B, 3>,
+        xs: SequenceTensor<B, 3>,
         h_init: Self::State,
-    ) -> (Tensor<B, 3>, Self::State) {
-        if xs.dims()[1] == 0 {
+    ) -> (SequenceTensor<B, 3>, Self::State) {
+        if xs.data.dims()[1] == 0 {
             return (xs, h_init);
         }
-        let (ys, h_last) = self.forward(xs, Some(h_init));
-        (ys, h_last)
+        let (ys, h_last) = self.forward(xs.data, Some(h_init));
+        // FIXME: select last state according to mask
+        (SequenceTensor::new(ys, xs.mask), h_last)
     }
 }
 
@@ -117,7 +121,7 @@ impl Config for GruConfig {
     }
 }
 
-impl<B: Backend> Decoder<B> for Gru<B> {
+impl<B: Backend> SequenceModel<B> for Gru<B> {
     type State = Tensor<B, 2>;
 
     fn init_state(&self, batch_size: usize, device: &B::Device) -> Self::State {
@@ -126,18 +130,19 @@ impl<B: Backend> Decoder<B> for Gru<B> {
 
     fn forward_sequence(
         &self,
-        xs: Tensor<B, 3>,
+        xs: SequenceTensor<B, 3>,
         h_init: Self::State,
-    ) -> (Tensor<B, 3>, Self::State) {
-        if xs.dims()[1] == 0 {
+    ) -> (SequenceTensor<B, 3>, Self::State) {
+        if xs.data.dims()[1] == 0 {
             return (xs, h_init);
         }
-        let h_all = self.forward(xs, Some(h_init));
+        let h_all = self.forward(xs.data, Some(h_init));
+        // FIXME: select last state according to mask
         let h_last = h_all
             .clone()
             .narrow(1, h_all.dims()[1] - 1, 1)
             .squeeze_dim(1);
-        (h_all, h_last)
+        (SequenceTensor::new(h_all, xs.mask), h_last)
     }
 }
 

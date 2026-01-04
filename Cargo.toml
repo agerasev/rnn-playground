@@ -11,3 +11,4 @@ burn = { version = "0.19", features = [
     "wgpu",
     "fusion",
 ], default-features = false }
+tokenizers = "0.22.2"

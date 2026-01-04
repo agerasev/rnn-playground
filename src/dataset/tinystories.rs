@@ -1,4 +1,3 @@
-use anyhow::Result;
 use std::{
     fs::File,
     io,
@@ -6,7 +5,18 @@ use std::{
     path::Path,
 };
 
-use crate::dataset::Dataset;
+use anyhow::Result;
+use burn::{
+    data::dataloader::batcher::Batcher,
+    nn::attention::{GeneratePaddingMask, SeqLengthOption, generate_padding_mask},
+    prelude::*,
+};
+
+use crate::{
+    dataset::Dataset,
+    model::seq::SequenceTensor,
+    tokenizer::{SpecialToken, Tokenizer},
+};
 
 fn read_until_slice(reader: &mut impl BufRead, delim: &[u8]) -> io::Result<Vec<u8>> {
     let mut buffer = Vec::new();
@@ -52,4 +62,34 @@ impl Iterator for TinyStories {
     }
 }
 
-impl Dataset for TinyStories {}
+impl Dataset for TinyStories {
+    type Sample = String;
+    type Batch<B: Backend> = SequenceTensor<B, 2, Int>;
+    type Batcher<B: Backend, T: Tokenizer> = TinyStoriesBatcher<T>;
+}
+
+pub struct TinyStoriesBatcher<T: Tokenizer> {
+    tokenizer: T,
+}
+
+impl<B: Backend, T: Tokenizer> Batcher<B, String, SequenceTensor<B, 2, Int>>
+    for TinyStoriesBatcher<T>
+{
+    fn batch(
+        &self,
+        items: Vec<String>,
+        device: &<B as Backend>::Device,
+    ) -> SequenceTensor<B, 2, Int> {
+        let tokens_list = items
+            .into_iter()
+            .map(|s| self.tokenizer.encode_all(&s))
+            .collect();
+        let GeneratePaddingMask { tensor, mask } = generate_padding_mask(
+            self.tokenizer.special_token(SpecialToken::Pad),
+            tokens_list,
+            SeqLengthOption::NoMax,
+            device,
+        );
+        SequenceTensor { data: tensor, mask }
+    }
+}

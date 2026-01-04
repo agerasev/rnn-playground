@@ -1,11 +1,11 @@
 use burn::{
     module::{Module, ModuleDisplay},
-    prelude::Backend,
+    prelude::*,
 };
 
-pub mod decoder;
 pub mod lm;
 pub mod rnn;
+pub mod seq;
 
 pub trait Config {
     type Model<B: Backend>: Module<B> + ModuleDisplay;
