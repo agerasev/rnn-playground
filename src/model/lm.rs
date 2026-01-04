@@ -1,11 +1,13 @@
 use burn::{
-    nn::{Embedding, EmbeddingConfig, Linear, LinearConfig},
+    nn::{Embedding, EmbeddingConfig, Linear, LinearConfig, loss::CrossEntropyLossConfig},
     prelude::*,
+    tensor::backend::AutodiffBackend,
+    train::{TrainOutput, TrainStep, ValidStep},
 };
 
 use crate::model::{
     Config,
-    seq::{SequenceModel, SequenceModelConfig, SequenceTensor},
+    seq::{AutodiffSequenceModel, SequenceModel, SequenceModelConfig, SequenceTensor},
 };
 
 #[derive(Debug)]
@@ -34,6 +36,10 @@ impl<M: SequenceModelConfig> Config for LmConfig<M> {
 }
 
 impl<B: Backend, M: SequenceModel<B>> Lm<B, M> {
+    pub fn init_state(&self, batch_size: usize) -> M::State {
+        self.decoder.init_state(batch_size)
+    }
+
     pub fn forward(
         &self,
         tokens: SequenceTensor<B, 2, Int>,
@@ -43,5 +49,22 @@ impl<B: Backend, M: SequenceModel<B>> Lm<B, M> {
         let (h, new_state) = self.decoder.forward_sequence(x, state);
         let y = SequenceTensor::new(self.lm_head.forward(h.data), h.mask);
         (y, new_state)
+    }
+}
+
+impl<B: AutodiffBackend, M: AutodiffSequenceModel<B>>
+    TrainStep<SequenceTensor<B, 2, Int>, SequenceTensor<B, 3>> for Lm<B, M>
+{
+    fn step(&self, batch: SequenceTensor<B, 2, Int>) -> TrainOutput<SequenceTensor<B, 3>> {
+        let [batch_size, max_seq_len] = batch.mask.dims();
+        let (output, _) = self.forward(batch.clone(), self.init_state(batch_size));
+        let logits = output.data.narrow(1, 0, max_seq_len - 1);
+        let target = batch.data.narrow(1, 1, max_seq_len - 1);
+        let mask = batch.mask.narrow(1, 1, max_seq_len - 1);
+        let loss = CrossEntropyLossConfig::new()
+            .with_pad_tokens(unimplemented!("masked indices"))
+            .init(&batch.data.device())
+            .forward(logits.flatten(0, 1), target.flatten(0, 1));
+        TrainOutput::new(self, loss.backward(), output)
     }
 }

@@ -82,7 +82,13 @@ impl<B: Backend, T: Tokenizer> Batcher<B, String, SequenceTensor<B, 2, Int>>
     ) -> SequenceTensor<B, 2, Int> {
         let tokens_list = items
             .into_iter()
-            .map(|s| self.tokenizer.encode_all(&s))
+            .map(|s| {
+                [self.tokenizer.special_token(SpecialToken::Begin)]
+                    .into_iter()
+                    .chain(self.tokenizer.encode_all(&s))
+                    .chain([self.tokenizer.special_token(SpecialToken::End)])
+                    .collect()
+            })
             .collect();
         let GeneratePaddingMask { tensor, mask } = generate_padding_mask(
             self.tokenizer.special_token(SpecialToken::Pad),

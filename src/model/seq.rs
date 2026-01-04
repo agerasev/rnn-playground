@@ -1,6 +1,6 @@
 use burn::{
     Tensor,
-    module::{AutodiffModule, Module},
+    module::{AutodiffModule, Module, ModuleDisplay},
     prelude::*,
     tensor::{BasicOps, TensorKind, backend::AutodiffBackend},
 };
@@ -11,9 +11,9 @@ pub trait SequenceModelConfig: Config {
     fn model_dim(&self) -> usize;
 }
 
-pub trait SequenceModel<B: Backend>: Module<B> {
+pub trait SequenceModel<B: Backend>: Module<B> + ModuleDisplay {
     type State;
-    fn init_state(&self, batch_size: usize, device: &B::Device) -> Self::State;
+    fn init_state(&self, batch_size: usize) -> Self::State;
     fn forward_sequence(
         &self,
         xs: SequenceTensor<B, 3>,
@@ -35,10 +35,8 @@ impl<
 impl<B: Backend, M: SequenceModel<B>> SequenceModel<B> for Vec<M> {
     type State = Vec<M::State>;
 
-    fn init_state(&self, batch_size: usize, device: &<B as Backend>::Device) -> Self::State {
-        self.iter()
-            .map(|m| m.init_state(batch_size, device))
-            .collect()
+    fn init_state(&self, batch_size: usize) -> Self::State {
+        self.iter().map(|m| m.init_state(batch_size)).collect()
     }
 
     fn forward_sequence(

@@ -55,8 +55,11 @@ impl Config for RnnConfig {
 impl<B: Backend> SequenceModel<B> for Naive<B> {
     type State = Tensor<B, 2>;
 
-    fn init_state(&self, batch_size: usize, device: &B::Device) -> Self::State {
-        Tensor::zeros([batch_size, self.hh.weight.dims()[0]], device)
+    fn init_state(&self, batch_size: usize) -> Self::State {
+        Tensor::zeros(
+            [batch_size, self.hh.weight.dims()[0]],
+            &self.hh.weight.device(),
+        )
     }
 
     fn forward_sequence(
@@ -86,10 +89,11 @@ impl Config for LstmConfig {
 impl<B: Backend> SequenceModel<B> for Lstm<B> {
     type State = LstmState<B, 2>;
 
-    fn init_state(&self, batch_size: usize, device: &B::Device) -> Self::State {
+    fn init_state(&self, batch_size: usize) -> Self::State {
+        let device = self.input_gate.input_transform.weight.device();
         LstmState::new(
-            Tensor::zeros([batch_size, self.d_hidden], device),
-            Tensor::zeros([batch_size, self.d_hidden], device),
+            Tensor::zeros([batch_size, self.d_hidden], &device),
+            Tensor::zeros([batch_size, self.d_hidden], &device),
         )
     }
 
@@ -125,8 +129,11 @@ impl Config for GruConfig {
 impl<B: Backend> SequenceModel<B> for Gru<B> {
     type State = Tensor<B, 2>;
 
-    fn init_state(&self, batch_size: usize, device: &B::Device) -> Self::State {
-        Tensor::zeros([batch_size, self.d_hidden], device)
+    fn init_state(&self, batch_size: usize) -> Self::State {
+        Tensor::zeros(
+            [batch_size, self.d_hidden],
+            &self.new_gate.input_transform.weight.device(),
+        )
     }
 
     fn forward_sequence(
