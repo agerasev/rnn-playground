@@ -18,6 +18,7 @@ fn forward_multiple_steps<B: Backend, R: Rnn<B>>(
 ) -> (SequenceTensor<B, 3>, R::State) {
     let mut ys = Vec::with_capacity(xs.data.dims()[1]);
     let mut h = h_init;
+    // FIXME: support masking
     for x in xs.data.split(1, 1).into_iter().map(|x| x.squeeze_dim(1)) {
         let (y, h_next) = rnn.forward_step(x, h);
         h = h_next;
@@ -136,11 +137,10 @@ impl<B: Backend> SequenceModel<B> for Gru<B> {
         if xs.data.dims()[1] == 0 {
             return (xs, h_init);
         }
-        let h_all = self.forward(xs.data, Some(h_init));
-        // FIXME: select last state according to mask
-        let h_last = h_all
-            .clone()
-            .narrow(1, h_all.dims()[1] - 1, 1)
+        let h_all = self.forward(xs.data, Some(h_init.clone()));
+        // FIXME: support masks other than [1, ..., 1, 0, ..., 0]
+        let h_last = Tensor::cat(vec![h_init.unsqueeze_dim(1), h_all.clone()], 1)
+            .select(1, xs.mask.clone().int().sum_dim(1).squeeze_dim(1))
             .squeeze_dim(1);
         (SequenceTensor::new(h_all, xs.mask), h_last)
     }
