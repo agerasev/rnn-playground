@@ -6,9 +6,9 @@ use burn::{
     prelude::*,
 };
 
-use crate::model::{
-    Config,
-    seq::{SeqTensor, SequenceModel},
+use crate::{
+    model::{Config, seq::SequenceModel},
+    util::SeqTensor,
 };
 
 fn forward_multiple_steps<B: Backend, R: Rnn<B>>(

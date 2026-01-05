@@ -10,8 +10,8 @@ use burn::{data::dataloader::batcher::Batcher, prelude::*};
 
 use crate::{
     dataset::Dataset,
-    model::seq::SeqTensor,
     tokenizer::{SpecialToken, Tokenizer},
+    util::SeqTensor,
 };
 
 fn read_until_slice(reader: &mut impl BufRead, delim: &[u8]) -> io::Result<Vec<u8>> {

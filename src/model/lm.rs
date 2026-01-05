@@ -5,9 +5,12 @@ use burn::{
     train::{TrainOutput, TrainStep, ValidStep},
 };
 
-use crate::model::{
-    Config,
-    seq::{AutodiffSequenceModel, SeqTensor, SequenceModel, SequenceModelConfig},
+use crate::{
+    model::{
+        Config,
+        seq::{AutodiffSequenceModel, SequenceModel, SequenceModelConfig},
+    },
+    util::SeqTensor,
 };
 
 #[derive(Debug)]
