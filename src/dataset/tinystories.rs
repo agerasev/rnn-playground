@@ -6,15 +6,11 @@ use std::{
 };
 
 use anyhow::Result;
-use burn::{
-    data::dataloader::batcher::Batcher,
-    nn::attention::{GeneratePaddingMask, SeqLengthOption, generate_padding_mask},
-    prelude::*,
-};
+use burn::{data::dataloader::batcher::Batcher, prelude::*};
 
 use crate::{
     dataset::Dataset,
-    model::seq::SequenceTensor,
+    model::seq::SeqTensor,
     tokenizer::{SpecialToken, Tokenizer},
 };
 
@@ -64,22 +60,17 @@ impl Iterator for TinyStories {
 
 impl Dataset for TinyStories {
     type Sample = String;
-    type Batch<B: Backend> = SequenceTensor<B, 2, Int>;
+    type Batch<B: Backend> = SeqTensor<B, 2, Int>;
     type Batcher<B: Backend, T: Tokenizer> = TinyStoriesBatcher<T>;
 }
 
 pub struct TinyStoriesBatcher<T: Tokenizer> {
-    tokenizer: T,
+    pub max_length: usize,
+    pub tokenizer: T,
 }
 
-impl<B: Backend, T: Tokenizer> Batcher<B, String, SequenceTensor<B, 2, Int>>
-    for TinyStoriesBatcher<T>
-{
-    fn batch(
-        &self,
-        items: Vec<String>,
-        device: &<B as Backend>::Device,
-    ) -> SequenceTensor<B, 2, Int> {
+impl<B: Backend, T: Tokenizer> Batcher<B, String, SeqTensor<B, 2, Int>> for TinyStoriesBatcher<T> {
+    fn batch(&self, items: Vec<String>, device: &<B as Backend>::Device) -> SeqTensor<B, 2, Int> {
         let tokens_list = items
             .into_iter()
             .map(|s| {
@@ -90,12 +81,7 @@ impl<B: Backend, T: Tokenizer> Batcher<B, String, SequenceTensor<B, 2, Int>>
                     .collect()
             })
             .collect();
-        let GeneratePaddingMask { tensor, mask } = generate_padding_mask(
-            self.tokenizer.special_token(SpecialToken::Pad),
-            tokens_list,
-            SeqLengthOption::NoMax,
-            device,
-        );
-        SequenceTensor { data: tensor, mask }
+        let pad_token = self.tokenizer.special_token(SpecialToken::Pad);
+        SeqTensor::from_tokens(tokens_list, pad_token, Some(self.max_length), device)
     }
 }

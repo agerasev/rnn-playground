@@ -8,23 +8,29 @@ use burn::{
 
 use crate::model::{
     Config,
-    seq::{SequenceModel, SequenceTensor},
+    seq::{SeqTensor, SequenceModel},
 };
 
 fn forward_multiple_steps<B: Backend, R: Rnn<B>>(
     rnn: &R,
-    xs: SequenceTensor<B, 3>,
+    xs: SeqTensor<B, 3>,
     h_init: R::State,
-) -> (SequenceTensor<B, 3>, R::State) {
-    let mut ys = Vec::with_capacity(xs.data.dims()[1]);
+) -> (SeqTensor<B, 3>, R::State) {
+    let mut ys = Vec::with_capacity(xs.tensor().dims()[1]);
     let mut h = h_init;
     // FIXME: support masking
-    for x in xs.data.split(1, 1).into_iter().map(|x| x.squeeze_dim(1)) {
+    for x in xs
+        .tensor()
+        .clone()
+        .split(1, 1)
+        .into_iter()
+        .map(|x| x.squeeze_dim(1))
+    {
         let (y, h_next) = rnn.forward_step(x, h);
         h = h_next;
         ys.push(y.unsqueeze_dim(1));
     }
-    let ys = SequenceTensor::new(Tensor::cat(ys, 1), xs.mask);
+    let ys = xs.replace(Tensor::cat(ys, 1));
     (ys, h)
 }
 
@@ -64,9 +70,9 @@ impl<B: Backend> SequenceModel<B> for Naive<B> {
 
     fn forward_sequence(
         &self,
-        xs: SequenceTensor<B, 3>,
+        xs: SeqTensor<B, 3>,
         state: Self::State,
-    ) -> (SequenceTensor<B, 3>, Self::State) {
+    ) -> (SeqTensor<B, 3>, Self::State) {
         forward_multiple_steps(self, xs, state)
     }
 }
@@ -99,15 +105,15 @@ impl<B: Backend> SequenceModel<B> for Lstm<B> {
 
     fn forward_sequence(
         &self,
-        xs: SequenceTensor<B, 3>,
+        xs: SeqTensor<B, 3>,
         h_init: Self::State,
-    ) -> (SequenceTensor<B, 3>, Self::State) {
-        if xs.data.dims()[1] == 0 {
+    ) -> (SeqTensor<B, 3>, Self::State) {
+        if xs.tensor().dims()[1] == 0 {
             return (xs, h_init);
         }
-        let (ys, h_last) = self.forward(xs.data, Some(h_init));
+        let (ys, h_last) = self.forward(xs.tensor().clone(), Some(h_init));
         // FIXME: select last state according to mask
-        (SequenceTensor::new(ys, xs.mask), h_last)
+        (xs.replace(ys), h_last)
     }
 }
 
@@ -138,18 +144,20 @@ impl<B: Backend> SequenceModel<B> for Gru<B> {
 
     fn forward_sequence(
         &self,
-        xs: SequenceTensor<B, 3>,
+        xs: SeqTensor<B, 3>,
         h_init: Self::State,
-    ) -> (SequenceTensor<B, 3>, Self::State) {
-        if xs.data.dims()[1] == 0 {
+    ) -> (SeqTensor<B, 3>, Self::State) {
+        if xs.tensor().dims()[1] == 0 {
             return (xs, h_init);
         }
-        let h_all = self.forward(xs.data, Some(h_init.clone()));
-        // FIXME: support masks other than [1, ..., 1, 0, ..., 0]
+        let h_all = self.forward(xs.tensor().clone(), Some(h_init.clone()));
         let h_last = Tensor::cat(vec![h_init.unsqueeze_dim(1), h_all.clone()], 1)
-            .select(1, xs.mask.clone().int().sum_dim(1).squeeze_dim(1))
+            .select(
+                1,
+                Tensor::from_data(xs.seq_lengths(), &xs.tensor().device()),
+            )
             .squeeze_dim(1);
-        (SequenceTensor::new(h_all, xs.mask), h_last)
+        (xs.replace(h_all), h_last)
     }
 }
 
