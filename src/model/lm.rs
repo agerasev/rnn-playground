@@ -7,27 +7,30 @@ use burn::{
 
 use crate::{
     model::{
-        Config,
-        seq::{AutodiffSequenceModel, SequenceModel, SequenceModelConfig},
+        ModelConfig,
+        seq::{
+            SequenceModel, SequenceModelConfig,
+            some::{SeqModel, SeqModelConfig, SeqModelState},
+        },
     },
     util::SeqTensor,
 };
 
-#[derive(Debug)]
-pub struct LmConfig<M: SequenceModelConfig> {
+#[derive(Config, Debug)]
+pub struct LmConfig {
     pub vocab_size: usize,
-    pub decoder: M,
+    pub decoder: SeqModelConfig,
 }
 
 #[derive(Module, Debug)]
-pub struct Lm<B: Backend, M: Module<B>> {
+pub struct Lm<B: Backend> {
     pub emb: Embedding<B>,
-    pub decoder: M,
+    pub decoder: SeqModel<B>,
     pub lm_head: Linear<B>,
 }
 
-impl<M: SequenceModelConfig> Config for LmConfig<M> {
-    type Model<B: Backend> = Lm<B, M::Model<B>>;
+impl ModelConfig for LmConfig {
+    type Model<B: Backend> = Lm<B>;
 
     fn init_model<B: Backend>(&self, device: &B::Device) -> Self::Model<B> {
         Lm {
@@ -38,16 +41,16 @@ impl<M: SequenceModelConfig> Config for LmConfig<M> {
     }
 }
 
-impl<B: Backend, M: SequenceModel<B>> Lm<B, M> {
-    pub fn init_state(&self, batch_size: usize) -> M::State {
+impl<B: Backend> Lm<B> {
+    pub fn init_state(&self, batch_size: usize) -> SeqModelState<B> {
         self.decoder.init_state(batch_size)
     }
 
     pub fn forward(
         &self,
         tokens: SeqTensor<B, 2, Int>,
-        state: M::State,
-    ) -> (SeqTensor<B, 3>, M::State) {
+        state: SeqModelState<B>,
+    ) -> (SeqTensor<B, 3>, SeqModelState<B>) {
         let xs = tokens.map(|tensor| self.emb.forward(tensor));
         let (hs, new_state) = self.decoder.forward_sequence(xs, state);
         let ys = hs.map(|tensor| self.lm_head.forward(tensor));
@@ -98,18 +101,14 @@ pub struct AutoregressionOutput<B: Backend> {
     pub loss: Tensor<B, 1>,
 }
 
-impl<B: AutodiffBackend, M: AutodiffSequenceModel<B>>
-    TrainStep<SeqTensor<B, 2, Int>, AutoregressionOutput<B>> for Lm<B, M>
-{
+impl<B: AutodiffBackend> TrainStep<SeqTensor<B, 2, Int>, AutoregressionOutput<B>> for Lm<B> {
     fn step(&self, tokens: SeqTensor<B, 2, Int>) -> TrainOutput<AutoregressionOutput<B>> {
         let output = self.forward_autoregressive(tokens);
         TrainOutput::new(self, output.loss.clone().backward(), output)
     }
 }
 
-impl<B: Backend, M: SequenceModel<B>> ValidStep<SeqTensor<B, 2, Int>, AutoregressionOutput<B>>
-    for Lm<B, M>
-{
+impl<B: Backend> ValidStep<SeqTensor<B, 2, Int>, AutoregressionOutput<B>> for Lm<B> {
     fn step(&self, tokens: SeqTensor<B, 2, Int>) -> AutoregressionOutput<B> {
         self.forward_autoregressive(tokens)
     }

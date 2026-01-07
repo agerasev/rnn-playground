@@ -1,12 +1,15 @@
+pub mod rnn;
+pub mod some;
+
 use burn::{
     module::{AutodiffModule, Module, ModuleDisplay},
     prelude::*,
     tensor::backend::AutodiffBackend,
 };
 
-use crate::{model::Config, util::SeqTensor};
+use crate::{model::ModelConfig, util::SeqTensor};
 
-pub trait SequenceModelConfig: Config {
+pub trait SequenceModelConfig: ModelConfig {
     fn model_dim(&self) -> usize;
 }
 
