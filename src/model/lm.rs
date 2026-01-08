@@ -19,6 +19,7 @@ use crate::{
 #[derive(Config, Debug)]
 pub struct LmConfig {
     pub vocab_size: usize,
+    pub max_length: usize,
     pub decoder: SeqModelConfig,
 }
 

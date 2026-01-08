@@ -1,18 +1,46 @@
 use std::{
     fs::File,
-    io,
-    io::{BufRead, BufReader},
-    path::Path,
+    io::{self, BufRead, BufReader},
+    path::{Path, PathBuf},
 };
 
 use anyhow::Result;
-use burn::{data::dataloader::batcher::Batcher, prelude::*};
+use serde::{Deserialize, Serialize};
 
-use crate::{
-    dataset::Dataset,
-    tokenizer::{SpecialToken, Tokenizer},
-    util::SeqTensor,
-};
+use crate::dataset::util::git;
+
+const GIT_REPO: &str = "git@hf.co:datasets/roneneldan/TinyStories";
+pub const TRAIN_FILE: &str = "TinyStoriesV2-GPT4-train.txt";
+pub const VALID_FILE: &str = "TinyStoriesV2-GPT4-valid.txt";
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TinyStoriesConfig {
+    pub repo_dir: PathBuf,
+    pub file_path: PathBuf,
+}
+
+impl TinyStoriesConfig {
+    pub fn init_dataset(&self) -> Result<TinyStories> {
+        if !self.repo_dir.exists() {
+            git::clone(GIT_REPO, &self.repo_dir, false);
+        }
+        git::lfs_pull(&self.repo_dir, [&self.file_path]);
+
+        Ok(TinyStories {
+            file_path: self.repo_dir.join(&self.file_path),
+        })
+    }
+}
+
+pub struct TinyStories {
+    file_path: PathBuf,
+}
+
+impl TinyStories {
+    pub fn samples(&self) -> Result<impl Iterator<Item = Result<String>>> {
+        TinyStoriesReader::new(&self.file_path)
+    }
+}
 
 fn read_until_slice(reader: &mut impl BufRead, delim: &[u8]) -> io::Result<Vec<u8>> {
     let mut buffer = Vec::new();
@@ -33,11 +61,11 @@ fn read_until_slice(reader: &mut impl BufRead, delim: &[u8]) -> io::Result<Vec<u
     Ok(buffer)
 }
 
-pub struct TinyStories {
+struct TinyStoriesReader {
     file: BufReader<File>,
 }
 
-impl TinyStories {
+impl TinyStoriesReader {
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         Ok(Self {
             file: BufReader::new(File::open(path)?),
@@ -45,7 +73,7 @@ impl TinyStories {
     }
 }
 
-impl Iterator for TinyStories {
+impl Iterator for TinyStoriesReader {
     type Item = Result<String>;
     fn next(&mut self) -> Option<Self::Item> {
         match read_until_slice(&mut self.file, "<|endoftext|>".as_bytes()) {
@@ -55,33 +83,5 @@ impl Iterator for TinyStories {
                 _ => Some(Err(err.into())),
             },
         }
-    }
-}
-
-impl Dataset for TinyStories {
-    type Sample = String;
-    type Batch<B: Backend> = SeqTensor<B, 2, Int>;
-    type Batcher<B: Backend, T: Tokenizer> = TinyStoriesBatcher<T>;
-}
-
-pub struct TinyStoriesBatcher<T: Tokenizer> {
-    pub max_length: usize,
-    pub tokenizer: T,
-}
-
-impl<B: Backend, T: Tokenizer> Batcher<B, String, SeqTensor<B, 2, Int>> for TinyStoriesBatcher<T> {
-    fn batch(&self, items: Vec<String>, device: &<B as Backend>::Device) -> SeqTensor<B, 2, Int> {
-        let tokens_list = items
-            .into_iter()
-            .map(|s| {
-                [self.tokenizer.special_token(SpecialToken::Begin)]
-                    .into_iter()
-                    .chain(self.tokenizer.encode_all(&s))
-                    .chain([self.tokenizer.special_token(SpecialToken::End)])
-                    .collect()
-            })
-            .collect();
-        let pad_token = self.tokenizer.special_token(SpecialToken::Pad);
-        SeqTensor::from_tokens(tokens_list, pad_token, Some(self.max_length), device)
     }
 }

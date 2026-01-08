@@ -3732,12 +3732,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "rnn-pg"
+name = "rnn-exp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "burn",
+ "serde",
  "tokenizers",
+ "toml",
 ]
 
 [[package]]

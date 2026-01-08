@@ -1,5 +1,5 @@
 [package]
-name = "rnn-pg"
+name = "rnn-exp"
 version = "0.1.0"
 edition = "2024"
 
@@ -11,4 +11,6 @@ burn = { version = "0.19", features = [
     "wgpu",
     "fusion",
 ], default-features = false }
+serde = { version = "1.0.228", features = ["derive"] }
 tokenizers = "0.22.2"
+toml = "0.9.10"
