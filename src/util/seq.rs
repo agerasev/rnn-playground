@@ -109,8 +109,8 @@ fn mask_from_seq_lengths<B: Backend>(
 
 impl<B: Backend> SeqTensor<B, 2, Int> {
     pub fn from_tokens(
-        tokens_list: Vec<Vec<usize>>,
-        pad_token: usize,
+        tokens_list: Vec<Vec<u32>>,
+        pad_token: u32,
         seq_length: impl Into<SeqLengthOption>,
         device: &B::Device,
     ) -> Self {

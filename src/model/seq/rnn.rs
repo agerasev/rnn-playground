@@ -203,6 +203,7 @@ pub enum SomeRnnConfig {
     Gru(GruConfig),
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Module, Debug)]
 pub enum SomeRnn<B: Backend> {
     Naive(Naive<B>),

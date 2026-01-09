@@ -1,10 +1,13 @@
+use std::env;
+
 use anyhow::Result;
 use rnn_exp::dataset::tinystories::TinyStoriesConfig;
 
 fn main() -> Result<()> {
+    let home = env::home_dir().unwrap();
     let dataset = TinyStoriesConfig {
-        repo_dir: "/home/agerasev/data/datasets/TinyStories".into(),
-        file_path: "TinyStoriesV2-GPT4-train.txt".into(),
+        repo_dir: home.join("data/datasets/TinyStories"),
+        file_path: "TinyStoriesV2-GPT4-valid.txt".into(),
     }
     .init_dataset()?;
 
