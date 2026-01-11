@@ -1,7 +1,14 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
+use burn::config::Config;
 use tokenizers::Tokenizer;
+
+#[derive(Config, Debug)]
+pub struct TokenizerConfig {
+    pub vocab_size: usize,
+    pub path: PathBuf,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum SpecialToken {

@@ -3739,7 +3739,6 @@ dependencies = [
  "burn",
  "serde",
  "tokenizers",
- "toml",
 ]
 
 [[package]]

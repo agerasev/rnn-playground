@@ -2,7 +2,10 @@ use burn::{
     nn::{Embedding, EmbeddingConfig, Linear, LinearConfig},
     prelude::*,
     tensor::{activation::log_softmax, backend::AutodiffBackend},
-    train::{TrainOutput, TrainStep, ValidStep},
+    train::{
+        TrainOutput, TrainStep, ValidStep,
+        metric::{Adaptor, ItemLazy, LossInput},
+    },
 };
 
 use crate::{
@@ -96,10 +99,25 @@ fn autoregressive_cross_entropy_loss<B: Backend>(
         .neg()
 }
 
+#[derive(Clone, Debug)]
 pub struct AutoregressionOutput<B: Backend> {
     pub tokens: SeqTensor<B, 2, Int>,
     pub logits: SeqTensor<B, 3>,
     pub loss: Tensor<B, 1>,
+}
+
+impl<B: Backend> Adaptor<LossInput<B>> for AutoregressionOutput<B> {
+    fn adapt(&self) -> LossInput<B> {
+        LossInput::new(self.loss.clone())
+    }
+}
+
+impl<B: Backend> ItemLazy for AutoregressionOutput<B> {
+    type ItemSync = AutoregressionOutput<B>;
+
+    fn sync(self) -> Self::ItemSync {
+        self.clone()
+    }
 }
 
 impl<B: AutodiffBackend> TrainStep<SeqTensor<B, 2, Int>, AutoregressionOutput<B>> for Lm<B> {
