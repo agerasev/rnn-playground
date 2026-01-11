@@ -2,7 +2,7 @@ use std::{env, fs, path::Path};
 
 use anyhow::Result;
 use burn::{
-    backend::{Autodiff, Wgpu},
+    backend::{Autodiff, Wgpu, wgpu::WgpuSetup},
     data::dataloader::DataLoaderBuilder,
     optim::AdamConfig,
     prelude::*,
@@ -11,6 +11,7 @@ use burn::{
     train::{LearnerBuilder, LearningStrategy, metric::LossMetric},
 };
 
+use futures::executor::block_on;
 use rnn_exp::{
     dataset::{DatasetWrapper, SeqBatcher, tinystories::TinyStoriesConfig},
     model::{
@@ -23,6 +24,7 @@ use rnn_exp::{
     },
     tokenizer::{self, TokenizerConfig},
 };
+use wgpu::Instance;
 
 #[derive(Config, Debug)]
 pub struct TrainingConfig {
@@ -147,7 +149,34 @@ fn main() -> Result<()> {
     type MyBackend = Wgpu<f32, i32>;
     type MyAutodiffBackend = Autodiff<MyBackend>;
 
-    let device = burn::backend::wgpu::WgpuDevice::default();
+    let instance = Instance::default();
+    let adapters = instance.enumerate_adapters(wgpu::Backends::all());
+    println!("Available adapters:");
+    let adapter = adapters.into_iter().nth(0).unwrap();
+    let info = adapter.get_info();
+    dbg!(&info);
+    let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: None,
+        required_features: wgpu::Features::SHADER_INT64 | wgpu::Features::SUBGROUP,
+        required_limits: wgpu::Limits {
+            max_compute_workgroup_storage_size: 64000,
+            max_compute_invocations_per_workgroup: 512,
+            ..wgpu::Limits::defaults()
+        },
+        memory_hints: wgpu::MemoryHints::Performance,
+        trace: wgpu::Trace::Off,
+    }))
+    .unwrap();
+    let device = burn::backend::wgpu::init_device(
+        WgpuSetup {
+            instance,
+            adapter,
+            device,
+            queue,
+            backend: info.backend,
+        },
+        Default::default(),
+    );
 
     train::<MyAutodiffBackend>(Path::new("./data/00-test-rnn"), device.clone())
 }
